@@ -3,11 +3,11 @@
 keyboardcontrol node
 
 ``` 
-rosrun roas6000a_project KeyBoardControl
+rosrun keyboard_control KeyBoardControl
 ```
 
 Face Recognition node
 
 ``` 
-rosrun face_recognition test.py
+rosrun face_recognition recognition.py
 ```
