@@ -4,11 +4,13 @@ import os
 import rospy
 import numpy as np
 import cv2
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image,LaserScan
+from visualization_msgs.msg import Marker
 from cv_bridge import CvBridge, CvBridgeError
 from geometry_msgs.msg import Pose2D
 from std_msgs.msg import Int8
 import time
+import math
 # import animeface
 # from PIL import Image as P_Image
 
@@ -18,10 +20,10 @@ import torch.nn.functional as F
 from itertools import product as product
 from math import ceil
 # import sys
-
+import tf
 
 COLOR_FRAME_TOPIC = '/vrep/image'
-
+LIDAR_TOPIC = '/vrep/scan'
 
 cfg = {
     'name': 'FaceBoxes',
@@ -35,6 +37,7 @@ cfg = {
     'loc_weight': 2.0,
     'gpu_train': True
 }
+
 
 
 cpu = True
@@ -59,15 +62,21 @@ class recognition:
         #print(net)
         self.device = torch.device("cpu" if cpu else "cuda")
         self.net = self.net.to(self.device)
+        self.lidarInitialized = False
+        self.lidarScan = LaserScan()
 
         
         
         self.imgSub = rospy.Subscriber(COLOR_FRAME_TOPIC, Image, self.image_receive, queue_size=1)
-        self.imgPosePub = rospy.Publisher('Location', Int8, queue_size=1)
+        self.lidarSub = rospy.Subscriber(LIDAR_TOPIC, LaserScan , self.scan_receive, queue_size=1)
+        # self.imgPosePub = rospy.Publisher('Location', Marker, queue_size=1)
+        self.imgTfBroadcaster = tf.TransformBroadcaster()
+        # datas.pose.position.z = 0.1
+        # datas.pose.position.x = 0
         self.bridge = CvBridge()
         self.color_image = None
         self.rate = rospy.Rate(10)
-        self.flagImageSub = False
+        self.imageInitialized = False
         self.face_cascade = cv2.CascadeClassifier(os.path.split(os.path.realpath(__file__))[0]+'/haarcascade_frontalface_default.xml')
         # self.anime_face_cascade = cv2.CascadeClassifier(os.path.split(os.path.realpath(__file__))[0]+'/lbpcascade_animeface.xml')
         
@@ -98,19 +107,15 @@ class recognition:
         
         
     def Loop(self):
+        
+        last_Detected = False
+        
         while(True):
-            if (self.flagImageSub):
+            if (self.imageInitialized & self.lidarInitialized):
                 color_img = cv2.flip(self.color_image,1)
                 # cv2.imshow("frame",color_img)
                 gray = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
                 
-                
-                # histeq_gray = cv2.equalizeHist(gray)
-                
-                
-                
-                
-                # print("Detection:",faces)
                 color_frame_cp = color_img.copy()
                 time.sleep(0.2)
                 bestx = -1
@@ -119,6 +124,7 @@ class recognition:
                 detected = False
                 an_detected = False
                 
+                # torch model anime face recognition
                 dets = ssd_detect_anime(color_img,self.net,self.device)
                 for k in range(dets.shape[0]):
                     an_detected = True
@@ -130,8 +136,12 @@ class recognition:
                     score = dets[k, 4]
                     # print('{:s} {:.3f} {:.1f} {:.1f} {:.1f} {:.1f}\n'.format(image_path, score, xmin, ymin, xmax, ymax))
                     cv2.rectangle(color_frame_cp, (int(xmin), int(ymin)), (int(xmax), int(ymax)), (255, 0, 255), 2)
+                    size = abs((xmax-xmin)*(ymax-ymin))
+                    if size > highestsize:
+                        bestx = (xmax+xmin)/2
                 
                 
+                # abandon face recog method
                 # anm_faces2 = animeface.detect(P_Image.fromarray(gray))
                 # for each in anm_faces2:  # 遍历所有检测到的动漫脸
                 #     temp = each.face.pos
@@ -141,6 +151,7 @@ class recognition:
                 #     h = temp.height
                 #     cv2.rectangle(color_frame_cp, (x, y), (x+w, y+h), (0, 0, 255), 2)  # 绘制矩形框
                 
+                # abandon face recog method
                 # anm_faces = self.anime_face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=1)
                 # for (x,y,w,h) in anm_faces:
                 #     # 在原彩色图上画人脸矩形框
@@ -151,6 +162,7 @@ class recognition:
                 #         bestx = x + 0.5*w
                 #         besty = y + 0.5*h
                 
+                # standard cascade classifier face recognition model
                 faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5)
                 for (x,y,w,h) in faces:
                     # 在原彩色图上画人脸矩形框
@@ -162,13 +174,28 @@ class recognition:
                         besty = y + 0.5*h
                 # 显示画好矩形框的图片
                 
-                if detected:
-                    messsage = Int8()
-                    angle = int((bestx-256)*45/512)
-                    # print('Angle:',angle)
-                    messsage.data = angle
-                    self.imgPosePub.publish(messsage)
                 if (detected or an_detected):
+                    last_Detected = True
+                    
+                    # determine the distance using lidar info after knowing image angle w.r.t. robot
+                    angle = (bestx-256.0)*45.0/512.0
+                    index = int(len(self.lidarScan.ranges)/2 + angle/abs(self.lidarScan.angle_increment*180/3.1415))
+                    
+                    if index<0:
+                        index = 0
+                    if index > len(self.lidarScan.ranges)-1:
+                        index = len(self.lidarScan.ranges)-1
+                    imgDistance = self.lidarScan.ranges[index]
+                    anglePi = angle*3.1416/180
+                    xdistance = imgDistance*math.cos(anglePi)
+                    ydistance = -imgDistance*math.sin(anglePi)
+                    self.imgTfBroadcaster.sendTransform((xdistance, ydistance, 0),
+                                tf.transformations.quaternion_from_euler(0, 0, 0),
+                                rospy.Time.now(),
+                                "image_pose",
+                                "base_link")
+                    
+                    # compare image with SIFT features
                     kp2,des2 = self.sift.detectAndCompute(gray,None)
                     SimilarID = -1
                     if des2 is not None:
@@ -183,32 +210,47 @@ class recognition:
                             if distanceTemp < leastDistance:
                                 SimilarID = i
                                 leastDistance = distanceTemp
-                            # print("Distance: " + str(distancetotal/len(match)))
-                            # print(len(match))
                         if (SimilarID!=-1):
                             print(self.names[SimilarID])
+                else:
+                    if (last_Detected):
+                        # TODO Update world frame image posiiton transformation
+                        pass
+                    last_Detected = False
+                    
                     
                     
                 
                 cv2.imshow('faces',color_frame_cp)
                 key = cv2.waitKey(50)
                 
-                # break
                 # Press esc or 'q' to close the image window
                 if key & 0xFF == ord('q') or key == 27:
                     cv2.destroyAllWindows()
                     exit(0)
                     break
+            else:
+                time.sleep(0.1)
+                
+    def scan_receive(self,data):
+        try:
+            self.lidarScan = data
+            self.lidarInitialized = True
+        except CvBridgeError as e:
+            print(e)
+        
     
     def image_receive(self, data):
         try:
             color_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
             self.color_image = color_image.copy()
-            # rospy.loginfo("Frame recived")
-            self.flagImageSub = True
+            self.imageInitialized = True
         except CvBridgeError as e:
             print(e)
 
+
+
+# Below are torch codes used for anime face recognition
 
 
 class BasicConv2d(nn.Module):

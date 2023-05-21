@@ -2,10 +2,14 @@
 
 ## keyboardcontrol node
 
+Control linear or angle velocity
 ``` 
 rosrun keyboard_control KeyBoardControl
 ```
-
+Control linear and angle velocity at the same time
+``` 
+rosrun keyboard_control teleop.py
+```
 ## Face Recognition node
 
 Prerequisties:
