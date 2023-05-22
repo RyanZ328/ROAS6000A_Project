@@ -34,3 +34,9 @@ Prerequisties:
 sudo apt-get install ros-noetic-laser-scan-matcher
 ```
 
+Run Nodes:
+
+``` 
+roslaunch test test.launch
+```
+
