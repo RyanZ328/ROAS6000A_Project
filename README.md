@@ -26,3 +26,11 @@ or
 ``` 
 roslaunch face_recognition face_recognition.launch
 ```
+
+## SLAM node
+
+Prerequisties:
+``` 
+sudo apt-get install ros-noetic-laser-scan-matcher
+```
+
