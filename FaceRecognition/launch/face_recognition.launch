@@ -1,0 +1,8 @@
+<!-- <node pkg="face_recognition" type="turtlesim_node" name="myTurtle" output="screen">
+        <remap from="/turtle1/cmd_vel" to="/cmd_vel"/>
+</node> -->
+<launch>
+
+<node pkg="face_recognition" type="recognition.py" name="recognition" args="$()" respawn="true" output="screen"/>
+
+</launch>

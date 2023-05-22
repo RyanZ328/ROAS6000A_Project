@@ -22,3 +22,7 @@ Run Nodes:
 ``` 
 rosrun face_recognition recognition.py
 ```
+or
+``` 
+roslaunch face_recognition face_recognition.launch
+```

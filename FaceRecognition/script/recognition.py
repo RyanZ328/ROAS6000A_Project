@@ -11,16 +11,16 @@ from geometry_msgs.msg import Pose2D
 from std_msgs.msg import Int8
 import time
 import math
-# import animeface
-# from PIL import Image as P_Image
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from itertools import product as product
 from math import ceil
-# import sys
 import tf
+
+# abandon face recognition lib
+# import animeface
+# from PIL import Image as P_Image
 
 COLOR_FRAME_TOPIC = '/vrep/image'
 LIDAR_TOPIC = '/vrep/scan'
@@ -42,7 +42,7 @@ cfg = {
 
 cpu = True
 # confidenceTh = 0.05
-confidenceTh = 0.1
+confidenceTh = 0.06
 nmsTh = 0.3
 keepTopK = 750
 top_k = 5000
@@ -187,8 +187,8 @@ class recognition:
                         index = len(self.lidarScan.ranges)-1
                     imgDistance = self.lidarScan.ranges[index]
                     anglePi = angle*3.1416/180
-                    xdistance = imgDistance*math.cos(anglePi)
-                    ydistance = -imgDistance*math.sin(anglePi)
+                    xdistance = imgDistance*math.sin(anglePi)
+                    ydistance = imgDistance*math.cos(anglePi)
                     self.imgTfBroadcaster.sendTransform((xdistance, ydistance, 0),
                                 tf.transformations.quaternion_from_euler(0, 0, 0),
                                 rospy.Time.now(),
