@@ -179,7 +179,7 @@ class recognition:
                     
                     # determine the distance using lidar info after knowing image angle w.r.t. robot
                     angle = (bestx-256.0)*45.0/512.0
-                    index = int(len(self.lidarScan.ranges)/2 + angle/abs(self.lidarScan.angle_increment*180/3.1415))
+                    index = int(len(self.lidarScan.ranges)/2 - angle/abs(self.lidarScan.angle_increment*180/3.1415))
                     
                     if index<0:
                         index = 0
